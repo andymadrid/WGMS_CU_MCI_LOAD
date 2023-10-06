@@ -2,7 +2,6 @@
 
 ### C.E.B. wrote the vast majority of these scripts
 ### Simply modified them to loop through each chromosome
-### Currently only set up to run LOAD v Control samples
 
 # 0_prepare_DSS_chrom.R
 suppressPackageStartupMessages({
