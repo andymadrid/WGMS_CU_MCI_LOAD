@@ -1,0 +1,78 @@
+################## 
+################## 
+# Manhattan plot for DMPs
+makeManhattan <- function(pvals, pdf) {
+	
+	# load packages needed
+	library(dplyr)
+	library(tidyverse)
+	library(ggsci)
+
+	# Filter for significant/non-significant CpGs
+	sig <- pvals[which(pvals$lfdr.from.zz<0.05),]
+	notSig <- pvals[which(pvals$lfdr.from.zz>0.05),]
+
+	# Take a random (25%) sample of the non-significant CpGs as to not have to plot all
+	set.seed(714)
+	notSig <- notSig[sample(nrow(notSig),(nrow(notSig)*0.25)),]
+
+	# Bringing it all back home
+	toPlot <- rbind(sig,notSig)
+
+	# Order chromosomes accordingly
+	toPlot$chr <- factor(toPlot$chr, levels=c(paste0("chr",1:22)))
+	toPlot <- toPlot[order(toPlot$chr),]
+
+	# Calculate size of chromosomes
+	toPlot2 <- toPlot %>% 
+		group_by(chr) %>% 
+		summarise(chr_len=max(start)) %>%
+
+	# Calculate cumulative bases per chromosome
+		mutate(tot=cumsum(as.numeric(chr_len))-as.numeric(chr_len)) %>%
+		select(-chr_len) %>%
+
+	# Add data back to dataset
+	left_join(toPlot, ., by=c("chr"="chr")) %>%
+	arrange(chr, start) %>%
+	mutate( startC=start+tot)
+
+	# Prepare x-axis
+	newAxis <- toPlot2 %>% group_by(chr) %>% summarize(center=( max(startC) + min(startC) ) / 2 )
+
+	# Change lFDR direction depending on if hyper or hypomethylated (slow moving honey)
+   	toPlot2 <- toPlot2 %>% 
+		dplyr::mutate(
+        new.lfdr = 
+	case_when(pi.diff > 0 ~ -log10(lfdr.from.zz),
+		pi.diff < 0 ~ log10(lfdr.from.zz)))
+
+	# Prepare color palette for chromosomes
+	colPal <- pal_frontiers()(9)
+	colPal <- c(rep(colPal,2),colPal[1:4])
+
+	# East side plot it out…north side plot it out
+	pdf(pdf)
+	man <- ggplot(toPlot2, aes(x=startC, y=new.lfdr)) +
+		geom_point( aes(color=as.factor(chr)), alpha=0.8, size=1.3) +
+		scale_color_manual(values = colPal) +
+		scale_x_continuous( label = newAxis$chr, breaks= newAxis$center ) +
+		scale_y_continuous(expand = c(0, 0) ) + 
+		xlab("Chromosome") + 
+		ylab("-log10(lFDR)") + 
+		theme_bw() +
+		theme( 
+     			legend.position="none",
+     			panel.border = element_blank(),
+      			panel.grid.major.x = element_blank(),
+      			panel.grid.minor.x = element_blank(),
+			axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+	print(man)
+	dev.off()
+}
+df <- fread("/media/Data/WGBS/LOAD_MCI/Results/MCI_Control/Outputs/Summaries/pvals.bed",header=T) 
+makeManhattan(df,"/media/Data/manhattan.mci.cu.pdf")
+df <- fread("/media/Data/WGBS/LOAD_MCI/Results/LOAD_Control/Outputs/Summaries/pvals.bed",header=T) 
+makeManhattan(df,"/media/Data/manhattan.load.cu.pdf")
+df <- fread("/media/Data/WGBS/LOAD_MCI/Results/LOAD_MCI/Outputs/Summaries/pvals.bed",header=T) 
+makeManhattan(df,"/media/Data/manhattan.load.mci.pdf")
