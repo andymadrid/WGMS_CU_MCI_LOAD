@@ -1,0 +1,56 @@
+################## 
+################## 
+# Violin plots
+
+# load in some packages
+library(data.table)
+library(ggplot2)
+library(GenomicRanges)
+
+# read in differential results
+df <- fread("/media/Data/WGBS/LOAD_MCI/Results/CONTROL_MCI_LOAD/Outputs/Summaries/pvals.bed",header=T)
+
+# filter to significant CpGs
+sig <- df[which(df$lfdr.from.ss<0.05),] 
+setwd("/media/Data/WGBS/LOAD_MCI/Results/CONTROL_MCI_LOAD/CONTROL_MCI_LOAD/Outputs/Pis/")
+
+# load in estimated methylation values data
+pi.files <- list.files(pattern = "bed$")
+pi.df <- lapply(pi.files, fread)
+pi.df <- as.data.frame(do.call(rbind,pi.df))
+meth.gr <- with(pi.df,GRanges(chr,IRanges(start)))
+dmps.gr	<- with(sig,GRanges(chr,IRanges(start)))
+overlaps <- as.data.frame(findOverlaps(dmps.gr, meth.gr))
+pi.sub <- pi.df[overlaps[,2], ]
+cpg.info <- paste0(pi.sub$chr,":",pi.sub$start+1)
+pi.sub <- pi.sub[,-c(1:3)]
+pi.sub <- as.data.frame(t(pi.sub))
+
+# load in phenotypic data
+targets <- read.csv("/media/Data/WGBS/LOAD_MCI/masterSamplesheetFilteredSamples.csv",header=T)
+#removeIDs <- read.table("/media/Data/WGBS/LOAD_MCI/removeSamples.txt",header=T)
+#targets <- subset(targets,!(study_id %in% removeIDs$sampleID))
+
+# Bringing it all back home
+pi.sub$groups <- targets$diagnostic_group
+
+# Create dataset to plot
+i <- 1
+ii <- ncol(pi.sub)
+mainLab <- cpg.info[i]
+x <- pi.sub[,c(i,ii)]
+colnames(x) <- c("pis", "groups")
+x$groups <- factor(x$groups, levels = c("CONTROL", "MCI", "LOAD"))
+
+# Plot it out
+pdf("/media/Data/vln.pdf")
+p <- ggplot(x, aes(x=groups, y=pis*100, fill=groups)) +
+	geom_violin(trim=F) +
+	scale_fill_manual(values=c("firebrick3","darkgoldenrod3","mediumblue")) +
+	#geom_jitter(shape=16, position=position_jitter(0.05)) +
+	geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 0.25) +
+	theme_bw() +
+	xlab("") +
+	ylab("Estimated Methylation Level (%)") + labs(title=mainLab)
+print(p)
+dev.off()
