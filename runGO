@@ -1,0 +1,83 @@
+library(data.table)
+
+################## 
+################## 
+# Gene Ontology 
+runGO <- function(pvals, piGroup, pdfFile) {
+
+	# Load package
+	library(clusterProfiler)
+	library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+	txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+	library(ChIPseeker)
+
+	# Filter for only significant CpGs
+	pvals <- as.data.frame(pvals)
+	sig <- pvals[which(pvals$lfdr.from.ss<0.05 & abs(pvals[,piGroup]) >= 0.025),]
+	sig2 <- with(sig,GRanges(chr,IRanges(start,end)))
+
+	# Get background 
+	#bg.gr <- with(pvals,GRanges(chr,IRanges(start,end)))
+
+	# Annotate background to genes
+	#peaksBG <- annotatePeak(bg.gr,tssRegion=c(-3000,0),level="gene",TxDb=txdb,annoDb="org.Hs.eg.db")
+	#peaksBG <- as.data.frame(peaksBG)
+	#peaksBG[which(peaksBG$annotation=="Distal Intergenic"),"SYMBOL"] <- NA
+	#e <- bitr(peaksBG$SYMBOL,fromType="SYMBOL",toType="ENTREZID",OrgDb="org.Hs.eg.db")
+	#genesUni <- e[,2]
+
+	# Annotate DMPs to genes
+	peaks <- annotatePeak(sig2,tssRegion=c(-3000,0),level="gene",TxDb=txdb,annoDb="org.Hs.eg.db")
+	peaks <- as.data.frame(peaks)
+
+	# Clean it up a bit
+	sig <- cbind(sig,peaks$SYMBOL,peaks$distanceToTSS,peaks$annotation)
+	colnames(sig) <- c(colnames(sig[,1:13]),"Symbol","distanceToTSS","annotation")
+	sig[which(sig$annotation=="Distal Intergenic"),"Symbol"] <- NA
+	sig$annotation <- gsub("Intron(.*)","Intron",sig$annotation)
+	sig$annotation <- gsub("Exon(.*)","Exon",sig$annotation)
+	sig$annotation <- gsub("Distal(.*)","Intergenic",sig$annotation)
+	sig$annotation <- gsub("Promoter(.*)","Promoter",sig$annotation)
+	sig$annotation <- gsub("3'(.*)","3'UTR",sig$annotation)
+	sig$annotation <- gsub("5'(.*)","5'UTR",sig$annotation)
+	sig$annotation <- gsub("Downstream.*)","Downstream",sig$annotation)
+
+	# Get ENTREZID for genes
+	e <- bitr(sig$Symbol,fromType="SYMBOL",toType="ENTREZID",OrgDb="org.Hs.eg.db")
+	genesAll <- e[,2]
+
+	# run GOs
+	#egoAll <- enrichGO(gene=genesAll,universe=genesUni,ont="BP",
+	#	readable=T,OrgDb="org.Hs.eg.db",pvalueCutoff=0.8,qvalueCutoff=1)
+	egoAll <- enrichGO(gene=genesAll,ont="BP",
+		readable=T,OrgDb="org.Hs.eg.db",pvalueCutoff=0.8,qvalueCutoff=1)
+	egoAll <- simplify(egoAll)
+
+	# load packages for plotting
+	library(forcats)
+	library(gplots)
+	library(ggplot2)
+	library(wesanderson)
+	colPal <- wes_palette("Zissou1",25,"continuous")
+	egoAll <- as.data.frame(egoAll)
+	egoAll$Description <- factor(egoAll$Description,levels=egoAll$Description)
+	pdf(pdfFile,height=8,width=12)
+	p1 <- ggplot(egoAll[1:25,],aes(x=-log10(pvalue),y=fct_rev(Description),fill=Description)) + 
+		geom_bar(stat="identity") + 
+		scale_fill_manual(values=colPal) + 
+		theme_classic() + 
+		theme(legend.position="none") + 
+		ggtitle("Differentially Methylated Genes") + 
+		theme(axis.title.y=element_blank(), text=element_text(size=20))
+	print(p1)
+	dev.off()
+
+	# get GO results out
+	return(egoAll)
+}
+df <- fread("~/Desktop/pvals.mci.ctrl.bed",header=T)
+egoResults <- runGO(df,"pi.diff.mci.ctrl","~/Desktop/go.mci.ctrl.pdf")
+df <- fread("~/Desktop/pvals.load.ctrl.bed",header=T)
+egoResults <- runGO(df,"pi.diff.load.ctrl","~/Desktop/go.load.ctrl.pdf")
+df <- fread("~/Desktop/pvals.load.mci.bed",header=T)
+egoResults <- runGO(df,"pi.diff.load.mci","~/Desktop/go.load.mci.pdf")
