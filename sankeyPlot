@@ -1,0 +1,101 @@
+library(data.table)
+
+################## 
+################## 
+# Make a Sankey Plot
+makeSankey <- function(pvals,piGroup) {
+
+	# Load packages
+	library(networkD3)
+	library(dplyr)
+	library(wesanderson)
+	library(ChIPseeker)
+	library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+	txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+
+	# Filter for only significant CpGs
+	pvals <- as.data.frame(pvals)
+	sig <- pvals[which(pvals$lfdr.from.ss<0.05 & abs(pvals[,piGroup]) >= 0.025),]
+
+	# Annotate DMPs to genes
+	sig <- with(sig,GRanges(chr,IRanges(start,end)))
+	peaks <- annotatePeak(sig,tssRegion=c(-3000,0),level="gene",TxDb=txdb,annoDb="org.Hs.eg.db")
+	peaks <- as.data.table(peaks)
+
+	# Change annotation to make it more streamlined
+	totalNum <- nrow(peaks)
+	intronPer <- 100*(length(grep("Intron",peaks$annotation))/totalNum)
+	exonPer <- 100*(length(grep("Exon",peaks$annotation))/totalNum)
+	promoterPer <- 100*(length(grep("Promoter",peaks$annotation))/totalNum)
+	utr5Per <- 100*(length(grep("5' UTR",peaks$annotation))/totalNum)
+	utr3Per <- 100*(length(grep("3' UTR",peaks$annotation))/totalNum)
+	downstreamPer <- 100*(length(grep("Downstream",peaks$annotation))/totalNum)
+	interPer <- 100*(length(grep("Intergenic",peaks$annotation))/totalNum)
+
+	# Round values
+	if(intronPer > 1) { intronPer <- round(intronPer)}
+	if(exonPer > 1) { exonPer <- round(exonPer)}
+	if(promoterPer > 1) { promoterPer <- round(promoterPer)}
+	if(utr5Per > 1) { utr5Per <- round(utr5Per)}
+	if(utr3Per > 1) { utr3Per <- round(utr3Per)}
+	if(downstreamPer > 1) { downstreamPer <- round(downstreamPer)}
+	if(interPer > 1) { interPer <- round(interPer)}
+
+	# Adjust values if below 1%
+	if(intronPer < 1 & intronPer > 0) { intronPer <- 1}
+	if(exonPer < 1 & exonPer > 0) { exonPer <- 1}
+	if(promoterPer < 1 & promoterPer > 0) { promoterPer <- 1}
+	if(utr5Per < 1 & utr5Per > 0) { utr5Per <- 1}
+	if(utr3Per < 1 & utr3Per > 0) { utr3Per <- 1}
+	if(downstreamPer < 1 & downstreamPer > 0) { downstreamPer <- 1}
+	if(interPer < 1 & interPer > 0) { interPer <- 1}
+
+	# Adjust for % above 100% due to adjusting above
+	x <- c("Promoter" = promoterPer, "5' UTR" = utr5Per, "Exon" = exonPer,
+		"Intron" = intronPer, "3' UTR" = utr3Per, "Downstream" = downstreamPer, "Intergenic" = interPer)
+	diff <- sum(x)-100
+	interPer <- interPer-diff
+
+	# set up data
+	toUse <- peaks
+	totalNum <- nrow(toUse)
+	name1 <- paste0("Differentially Methylated Positions (DMPs) (N = ",totalNum,")")
+	name2 <- paste0("Promoter (",promoterPer,"%)")
+	name3 <- paste0("5' UTR (",utr5Per,"%)")
+	name4 <- paste0("Exonic (",exonPer,"%)")
+	name5 <- paste0("Intronic (",intronPer,"%)")
+	name6 <- paste0("3' UTR (",utr3Per,"%)")
+	name7 <- paste0("Downstream (",downstreamPer,"%)")
+	name8 <- paste0("Intergenic (",interPer,"%)")
+
+	# set up links
+	links <- data.frame(
+		source=c(name1,name1,name1,name1,name1,name1,name1),
+		target=c(name2,name3,name4,name5,name6,name7,name8),
+
+		# set up values for plot
+		value=c(promoterPer,utr5Per,exonPer,intronPer,utr3Per,downstreamPer,interPer))
+		nodes <- data.frame(
+		name=c(as.character(links$source), 
+		as.character(links$target)) %>% unique())
+
+	# set up groups for connections
+	links$group <- as.factor(c("type_a","type_b","type_c","type_d","type_e","type_f","type_g"))
+
+	# set up groups for nodes
+	nodes$group <- as.factor(c("group1"))
+
+	# set up color scheme
+	my_color <- 'd3.scaleOrdinal() .domain(["type_a","type_b","type_c","type_d","type_e","type_f","type_g","group1"]) .range(["#FF410DFF","#6EE2FFFF","#F7C530FF","#95CC5EFF","#D0DFE6FF","#F79D1EFF","#748AA6FF","black"])'
+	links$IDsource <- match(links$source, nodes$name)-1 
+	links$IDtarget <- match(links$target, nodes$name)-1
+	sankeyNetwork(Links = links, Nodes = nodes, Source = "IDsource", Target = "IDtarget",Value = "value", NodeID = "name",colourScale=my_color, LinkGroup="group", NodeGroup="group",fontSize=20,sinksRight=FALSE)
+}
+
+# Run locally without having to deal with server HTML issues
+df <- fread("~/Desktop/pvals.mci.ctrl.bed",header=T)
+makeSankey(df,"pi.diff.mci.ctrl")
+df <- fread("~/Desktop/pvals.load.ctrl.bed",header=T)
+makeSankey(df,"pi.diff.load.ctrl")
+df <- fread("~/Desktop/pvals.load.mci.bed",header=T)
+makeSankey(df,"pi.diff.load.mci")
