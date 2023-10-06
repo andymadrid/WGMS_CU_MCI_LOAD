@@ -1,0 +1,48 @@
+library(data.table)
+
+################## 
+################## 
+# Volcano plot of DMPs
+makeVolcano <- function(pvals,piGroup,title,pdf) {
+
+	# Filter for significant/non-significant CpGs
+	pvals <- as.data.frame(pvals)
+	sig <- pvals[which(pvals$lfdr.from.ss<0.05 & abs(pvals[,piGroup]) >= 0.025),]
+	notSig <- pvals[setdiff(rownames(pvals),rownames(sig)),]
+
+	# Sort by hyper or hypo methylated
+	sigHyper <- sig[which(sig[,piGroup]>0),]
+	sigHypo <- sig[which(sig[,piGroup]<0),]
+
+	# Take a random (25%) sample of the non-significant CpGs as to not have to plot all
+	set.seed(714)
+	notSig <- notSig[sample(nrow(notSig),(nrow(notSig)*0.05)),]
+
+	# Add colors for dots
+	notSig$color <- "ivory3"
+	sigHyper$color <- "firebrick3"
+	sigHypo$color <- "mediumblue"
+	
+	# Bringing it all back home
+	toPlot <- rbind(sigHyper,sigHypo,notSig)
+
+	# Plot it out…east side plot it out
+	pdf(pdf)
+	yl <- expression( -log [10] (lFDR))
+	xl <- title
+	plot(toPlot[,piGroup],-log10(toPlot$lfdr.from.ss),cex=0.7,
+	     xlim=c(-0.2,0.2),col=toPlot$color,pch=16,
+	     xlab=xl,
+	     ylab=yl)
+	abline(h=-log10(0.05),lty=2)
+	abline(v=-0.025,lty=2)
+	abline(v=0.025,lty=2)
+	dev.off()
+}
+# Make volcano plots for data
+df <- fread("/media/Data/WGBS/LOAD_MCI/Results/CONTROL_MCI_LOAD/MCI_CONTROL/Outputs/Summaries/pvals.bed",header=T)
+makeVolcano(df,"pi.diff.mci.ctrl","Mean Methylation Difference (MCI - CU)","/media/Data/volcano.mci.control.pdf")
+df <- fread("/media/Data/WGBS/LOAD_MCI/Results/CONTROL_MCI_LOAD/LOAD_CONTROL/Outputs/Summaries/pvals.bed",header=T)
+makeVolcano(df,"pi.diff.load.ctrl","Mean Methylation Difference (LOAD - CU)","/media/Data/volcano.load.ctrl.pdf")
+df <- fread("/media/Data/WGBS/LOAD_MCI/Results/CONTROL_MCI_LOAD/LOAD_MCI/Outputs/Summaries/pvals.bed",header=T)
+makeVolcano(df,"pi.diff.load.mci","Mean Methylation Difference (LOAD - MCI)","/media/Data/volcano.laod.mci.pdf")
